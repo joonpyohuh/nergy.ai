@@ -37,8 +37,9 @@ Return ONLY valid JSON with this shape:
   ]
 }
 Rules:
-- Create 5-8 logic nodes that explain the product flow for writers.
-- Create 5-8 high-value documentation suggestions linked to nodes.
+- Create 4-6 logic nodes that explain the product flow for writers.
+- Create 4-6 high-value documentation suggestions linked to nodes.
+- Keep every field concise. Do not exceed 2 sentences anywhere.
 - Prefer DOCS when publicly documented; use CONFIRM when internals must be verified.
 - Write Korean for human-facing fields (title, plain, detail, example, reason, description, note).
 - If the product is unknown, still produce a best-effort analysis and mark uncertain docs as CONFIRM.
@@ -71,9 +72,11 @@ export async function runProductAnalysis(options: {
       Authorization: `Bearer ${options.apiKey}`,
       'Content-Type': 'application/json',
     },
+    signal: AbortSignal.timeout(50_000),
     body: JSON.stringify({
       model,
       response_format: { type: 'json_object' },
+      reasoning_effort: 'low',
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         {
