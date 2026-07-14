@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #191f28;
+  background: #f7f8fa;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, input { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+
+::selection { background: #dbeafe; color: #191f28; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #d1d6db; border: 3px solid transparent; border-radius: 999px; background-clip: padding-box; }
+
+.glass {
+  background: rgba(255,255,255,.86);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.mindmap-grid {
+  background-image: radial-gradient(#dfe4ea 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.flow-line::after {
+  content: '';
+  position: absolute;
+  left: calc(100% + 2px);
+  top: 50%;
+  width: 20px;
+  height: 2px;
+  background: #d9e2ec;
+}
+
+@media (max-width: 1023px) {
+  .flow-line::after { display: none; }
+}
+
+.progress-bar { animation: loadbar 2.4s ease-out both; }
+@keyframes loadbar { from { width: 4%; } to { width: 100%; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}
