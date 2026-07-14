@@ -39,41 +39,43 @@ describe('nergy.ai workspace app', () => {
   })
 
   it('runs a new product analysis with gpt-5.5 and adds a project', async () => {
+    const analyzePayload = {
+      model: 'gpt-5.5',
+      analysis: {
+        name: 'acme.dev',
+        description: '테스트 제품',
+        nodes: [
+          {
+            id: 'intake',
+            step: '01',
+            title: '입력',
+            plain: '입력을 받습니다.',
+            detail: '상세',
+            example: '예시',
+            color: '#3182F6',
+          },
+        ],
+        docs: [
+          {
+            id: 'guide',
+            title: '시작 가이드',
+            kind: 'How-to guide',
+            audience: '모두',
+            reason: '온보딩용',
+            outline: ['소개', '다음 단계'],
+            evidence: 'CONFIRM',
+            nodeId: 'intake',
+          },
+        ],
+        sources: [{ title: 'Home', url: 'https://acme.dev', date: '확인: 2026.07.14', note: '홈페이지' }],
+      },
+    }
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({
-          model: 'gpt-5.5',
-          analysis: {
-            name: 'acme.dev',
-            description: '테스트 제품',
-            nodes: [
-              {
-                id: 'intake',
-                step: '01',
-                title: '입력',
-                plain: '입력을 받습니다.',
-                detail: '상세',
-                example: '예시',
-                color: '#3182F6',
-              },
-            ],
-            docs: [
-              {
-                id: 'guide',
-                title: '시작 가이드',
-                kind: 'How-to guide',
-                audience: '모두',
-                reason: '온보딩용',
-                outline: ['소개', '다음 단계'],
-                evidence: 'CONFIRM',
-                nodeId: 'intake',
-              },
-            ],
-            sources: [{ title: 'Home', url: 'https://acme.dev', date: '확인: 2026.07.14', note: '홈페이지' }],
-          },
-        }),
+        status: 200,
+        text: async () => JSON.stringify(analyzePayload),
       }),
     )
 

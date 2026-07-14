@@ -19,22 +19,23 @@
   },
   "devDependencies": {
     "@eslint/js": "latest",
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
     "@testing-library/jest-dom": "latest",
     "@testing-library/react": "latest",
     "@testing-library/user-event": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vercel/node": "^5.8.24",
     "autoprefixer": "latest",
     "eslint": "latest",
     "eslint-plugin-react-hooks": "latest",
     "eslint-plugin-react-refresh": "latest",
     "globals": "latest",
+    "jsdom": "latest",
     "postcss": "latest",
     "tailwindcss": "3.4.17",
     "typescript": "latest",
     "typescript-eslint": "latest",
-    "vitest": "latest",
-    "jsdom": "latest"
+    "vitest": "latest"
   }
 }

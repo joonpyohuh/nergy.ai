@@ -125,10 +125,21 @@ function App() {
   const [query, setQuery] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showAnalyze, setShowAnalyze] = useState(false)
-  const [analyzeUrl, setAnalyzeUrl] = useState('https://')
+  const [analyzeUrl, setAnalyzeUrl] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [progress, setProgress] = useState(0)
   const [analyzeError, setAnalyzeError] = useState('')
+
+  const normalizeAnalyzeUrl = (raw: string) => {
+    let url = raw.trim()
+    while (/^https?:\/\/https?:\/\//i.test(url)) {
+      url = url.replace(/^https?:\/\//i, '')
+    }
+    if (url && !/^https?:\/\//i.test(url)) {
+      url = `https://${url}`
+    }
+    return url
+  }
   const [toast, setToast] = useState('')
 
   const project = projects.find((p) => p.id === activeProjectId) ?? null
@@ -208,8 +219,9 @@ function App() {
   }
 
   const runAnalyze = async () => {
-    const url = analyzeUrl.trim()
+    const url = normalizeAnalyzeUrl(analyzeUrl)
     if (!url || analyzing) return
+    setAnalyzeUrl(url)
     setAnalyzing(true)
     setAnalyzeError('')
     setProgress(18)
@@ -224,10 +236,20 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       })
-      const payload = (await response.json()) as {
+      const raw = await response.text()
+      let payload: {
         error?: string
         model?: string
         analysis?: AnalysisPayload
+      }
+      try {
+        payload = JSON.parse(raw) as typeof payload
+      } catch {
+        throw new Error(
+          response.status === 404
+            ? '분석 API(/api/analyze)를 찾을 수 없습니다. Vercel 재배포와 OPENAI_API_KEY 설정을 확인하세요.'
+            : `서버가 JSON이 아닌 응답을 반환했습니다. (HTTP ${response.status})`,
+        )
       }
 
       if (!response.ok || !payload.analysis) {
