@@ -245,15 +245,16 @@ function App() {
       try {
         payload = JSON.parse(raw) as typeof payload
       } catch {
+        const hint = raw.replace(/\s+/g, ' ').slice(0, 160)
         throw new Error(
           response.status === 404
-            ? '분석 API(/api/analyze)를 찾을 수 없습니다. Vercel 재배포와 OPENAI_API_KEY 설정을 확인하세요.'
-            : `서버가 JSON이 아닌 응답을 반환했습니다. (HTTP ${response.status})`,
+            ? '분석 API(/api/analyze)를 찾을 수 없습니다. Vercel 재배포를 확인하세요.'
+            : `서버가 JSON이 아닌 응답을 반환했습니다. (HTTP ${response.status}) ${hint}`,
         )
       }
 
       if (!response.ok || !payload.analysis) {
-        throw new Error(payload.error || '분석에 실패했습니다.')
+        throw new Error(payload.error || `분석에 실패했습니다. (HTTP ${response.status})`)
       }
 
       setProgress(100)
