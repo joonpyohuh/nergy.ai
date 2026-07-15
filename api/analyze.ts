@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-// OpenAI 호출이 25~45초 걸리므로 Edge(25초 응답 제한)가 아닌 Node 런타임을 사용한다.
+// OpenAI 호출이 25~50초 걸리므로 Edge(25초 응답 제한)가 아닌 Node 런타임을 사용한다.
 // maxDuration은 vercel.json의 functions 설정에서 60초로 지정.
 
 const SYSTEM_PROMPT = `You are nergy.ai, a Technical Writing Copilot.
@@ -14,10 +14,35 @@ Return ONLY valid JSON with this shape:
       "id": "slug",
       "step": "01",
       "title": "short Korean title",
-      "plain": "plain-language Korean summary",
+      "plain": "plain-language Korean one-liner",
       "detail": "1-2 short Korean sentences",
       "example": "concrete Korean example, one sentence",
-      "color": "#3182F6"
+      "color": "#3182F6",
+      "inputs": ["what this part receives, Korean"],
+      "outputs": ["what this part produces, Korean"],
+      "evidence": "DOCS | SPEC | CONFIRM",
+      "roleExplanations": {
+        "marketer": { "summary": "...", "whyItMatters": "...", "keyQuestions": ["...", "..."] },
+        "designer": { "summary": "...", "whyItMatters": "...", "keyQuestions": ["...", "..."] },
+        "developer": { "summary": "...", "whyItMatters": "...", "keyQuestions": ["...", "..."] },
+        "operator": { "summary": "...", "whyItMatters": "...", "keyQuestions": ["...", "..."] }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "slug",
+      "source": "source node id",
+      "target": "target node id",
+      "label": "short Korean connection label",
+      "type": "data | event | decision | control | handoff | feedback",
+      "summary": "why these two parts connect, Korean",
+      "trigger": "which condition or event starts this connection, Korean",
+      "transferredData": ["items that move through this connection"],
+      "successCondition": "one Korean sentence",
+      "risks": ["short Korean risk"],
+      "evidence": "DOCS | SPEC | CONFIRM",
+      "documentationOpportunities": ["needed doc title"]
     }
   ],
   "docs": [
@@ -33,21 +58,22 @@ Return ONLY valid JSON with this shape:
     }
   ],
   "sources": [
-    {
-      "title": "source title",
-      "url": "https://...",
-      "date": "확인: YYYY.MM.DD",
-      "note": "what this source supports, Korean"
-    }
+    { "title": "source title", "url": "https://...", "date": "확인: YYYY.MM.DD", "note": "what this source supports, Korean" }
   ]
 }
 Rules:
-- Create 4-6 logic nodes that explain the product flow for writers.
-- Create 4-6 high-value documentation suggestions linked to nodes.
-- Keep every field concise. Do not exceed 2 sentences anywhere.
+- Create 4-6 logic nodes and 5-9 meaningful edges between them.
+- Do NOT simply chain all nodes in a line. Only create edges that public materials can explain.
+- If feedback loops, validation, or human handoff exist, express them as separate edges.
+- Mark any edge that guesses internal implementation as CONFIRM. Never state guesses as facts.
+- Role explanations must differ by role, not be translations of each other:
+  marketer = business and customer-experience meaning; designer = user-facing states and interactions;
+  developer = data, APIs, states, failure conditions; operator = policies, approvals, monitoring, exceptions.
+- Write natural Korean for all human-facing fields. Prefer short, concrete sentences.
+- Keep every string under 90 characters. Keep arrays small: inputs/outputs 2-3, keyQuestions 2, transferredData 3-4, risks 1-2.
+- Create 4-6 documentation suggestions linked to nodes.
 - Prefer DOCS when publicly documented; use CONFIRM when internals must be verified.
-- Write Korean for human-facing fields (title, plain, detail, example, reason, description, note).
-- If the product is unknown, still produce a best-effort analysis and mark uncertain docs as CONFIRM.
+- If the product is unknown, still produce a best-effort analysis and mark uncertain items as CONFIRM.
 - sources should include the analyzed URL and any plausible public pages.`
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -78,7 +104,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 플랫폼 타임아웃(60초)보다 먼저 JSON 에러로 응답하기 위한 자체 제한.
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      signal: AbortSignal.timeout(50_000),
+      signal: AbortSignal.timeout(55_000),
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
@@ -125,7 +151,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const timedOut = error instanceof Error && error.name === 'TimeoutError'
     return res.status(timedOut ? 504 : 500).json({
       error: timedOut
-        ? '분석이 50초를 초과했습니다. 잠시 후 다시 시도해 주세요.'
+        ? '분석이 55초를 초과했습니다. 잠시 후 다시 시도해 주세요.'
         : error instanceof Error
           ? error.message
           : '분석 중 오류가 발생했습니다.',

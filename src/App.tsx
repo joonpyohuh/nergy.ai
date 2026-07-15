@@ -4,14 +4,12 @@ import {
   Check,
   CheckCircle2,
   ChevronRight,
-  CircleHelp,
   ClipboardList,
   Download,
   ExternalLink,
   FileText,
   FolderKanban,
   Globe2,
-  Layers3,
   Link2,
   LoaderCircle,
   Map,
@@ -25,19 +23,18 @@ import {
 import {
   DOC_STATUS_LABEL,
   DOC_STATUS_ORDER,
-  attachNodeIcons,
-  buildProjectFromAnalysis,
   createDelightProject,
   docsToMarkdown,
-  toSerializableNodes,
   type AnalysisPayload,
   type Audience,
   type DocStatus,
   type DocSuggestion,
-  type Evidence,
   type Project,
   type WorkspaceTab,
 } from './data'
+import { buildProjectFromAnalysis, migrateProject, serializeProject } from './lib/projectMigration'
+import { EvidenceBadge, StatusBadge } from './components/badges'
+import { LogicMapWorkspace } from './components/logic-map/LogicMapWorkspace'
 
 const STORAGE_KEY = 'nergy.ai.workspace.v1'
 
@@ -48,55 +45,13 @@ interface PersistedState {
   activeProjectId: string | null
 }
 
-const evidenceStyle: Record<Evidence, string> = {
-  DOCS: 'bg-blue-50 text-blue-700 border-blue-100',
-  SPEC: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-  CONFIRM: 'bg-amber-50 text-amber-700 border-amber-100',
-}
-
-function EvidenceBadge({ value }: { value: Evidence }) {
-  return (
-    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold tracking-wide ${evidenceStyle[value]}`}>
-      {value}
-    </span>
-  )
-}
-
-function StatusBadge({ status }: { status: DocStatus }) {
-  const styles: Record<DocStatus, string> = {
-    backlog: 'bg-toss-surface text-toss-muted',
-    planned: 'bg-blue-50 text-blue-700',
-    drafting: 'bg-violet-50 text-violet-700',
-    review: 'bg-amber-50 text-amber-700',
-    done: 'bg-emerald-50 text-emerald-700',
-  }
-  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${styles[status]}`}>{DOC_STATUS_LABEL[status]}</span>
-}
-
-function rehydrateProject(p: Project): Project {
-  const template = createDelightProject()
-  const serializableNodes = (p.nodes?.length ? p.nodes : template.nodes).map(({ icon: _icon, ...rest }) => rest)
-  return {
-    ...p,
-    nodes: attachNodeIcons(serializableNodes),
-    sources: p.sources?.length ? p.sources : template.sources,
-    docs: (p.docs?.length ? p.docs : template.docs).map((doc) => ({
-      ...doc,
-      outline: doc.outline ?? [],
-      notes: doc.notes ?? '',
-      assignee: doc.assignee ?? '',
-      status: doc.status ?? 'backlog',
-    })),
-  }
-}
-
 function loadState(): PersistedState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as PersistedState
       if (parsed.projects?.length) {
-        const projects = parsed.projects.map(rehydrateProject)
+        const projects = parsed.projects.map(migrateProject)
         return {
           projects,
           activeProjectId: parsed.activeProjectId && projects.some((p) => p.id === parsed.activeProjectId)
@@ -118,7 +73,6 @@ function App() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(boot.activeProjectId)
   const [view, setView] = useState<View>(boot.activeProjectId ? 'workspace' : 'projects')
   const [tab, setTab] = useState<WorkspaceTab>('map')
-  const [activeNodeId, setActiveNodeId] = useState('signal')
   const [activeDocId, setActiveDocId] = useState<string | null>(null)
   const [audience, setAudience] = useState<Audience | '모두'>('모두')
   const [statusFilter, setStatusFilter] = useState<DocStatus | 'all'>('all')
@@ -144,14 +98,10 @@ function App() {
 
   const project = projects.find((p) => p.id === activeProjectId) ?? null
   const activeDoc = project?.docs.find((d) => d.id === activeDocId) ?? null
-  const activeNode = project?.nodes.find((n) => n.id === activeNodeId) ?? project?.nodes[0]
 
   useEffect(() => {
     const payload = {
-      projects: projects.map((p) => ({
-        ...p,
-        nodes: toSerializableNodes(p.nodes),
-      })),
+      projects: projects.map(serializeProject),
       activeProjectId,
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
@@ -191,7 +141,6 @@ function App() {
     setTab('map')
     setSidebarOpen(false)
     const p = projects.find((x) => x.id === id)
-    if (p?.nodes[0]) setActiveNodeId(p.nodes[0].id)
     const firstWorking = p?.docs.find((d) => d.status === 'drafting' || d.status === 'planned')
     setActiveDocId(firstWorking?.id ?? p?.docs[0]?.id ?? null)
   }
@@ -261,7 +210,6 @@ function App() {
       const newProject = buildProjectFromAnalysis(url, payload.analysis, payload.model || 'gpt-5.5')
       setProjects((prev) => [newProject, ...prev])
       setActiveProjectId(newProject.id)
-      setActiveNodeId(newProject.nodes[0].id)
       setActiveDocId(newProject.docs[0]?.id ?? null)
       setShowAnalyze(false)
       setView('workspace')
@@ -516,105 +464,17 @@ function App() {
             </div>
 
             <section className="flex-1 overflow-y-auto p-4 sm:p-6">
-              {tab === 'map' && activeNode && (
-                <div className="mx-auto grid max-w-[1400px] gap-4 lg:grid-cols-[1fr_320px]">
-                  <div className="rounded-2xl border border-toss-line bg-white shadow-card">
-                    <div className="border-b border-toss-line px-5 py-4">
-                      <h2 className="text-[16px] font-extrabold">제품 로직 맵</h2>
-                      <p className="mt-0.5 text-[12px] font-medium text-toss-muted">노드를 선택하면 관련 문서 후보가 오른쪽에 표시됩니다.</p>
-                    </div>
-                    <div className="mindmap-grid p-4 sm:p-5">
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                        {project.nodes.map((node) => {
-                          const Icon = node.icon
-                          const active = node.id === activeNode.id
-                          const related = project.docs.filter((d) => d.nodeId === node.id).length
-                          return (
-                            <button
-                              key={node.id}
-                              onClick={() => setActiveNodeId(node.id)}
-                              className={`rounded-xl border p-3 text-left transition hover:-translate-y-0.5 ${
-                                active ? 'border-blue-300 bg-blue-50/40 shadow-card ring-4 ring-blue-50' : 'border-toss-line bg-white hover:border-blue-200'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span style={{ color: node.color, background: `${node.color}14` }} className="grid h-8 w-8 place-items-center rounded-lg">
-                                  <Icon size={16} />
-                                </span>
-                                <span className="text-[10px] font-extrabold text-toss-muted">{node.step}</span>
-                              </div>
-                              <h3 className="mt-2 text-[13px] font-extrabold">{node.title}</h3>
-                              <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-toss-muted">{node.plain}</p>
-                              <p className="mt-2 text-[10px] font-bold text-toss-blue">{related} docs</p>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                    <div className="border-t border-toss-line bg-[#FBFCFD] p-5">
-                      <div className="flex gap-3">
-                        <div style={{ background: activeNode.color }} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white">
-                          {(() => {
-                            const NodeIcon = activeNode.icon
-                            return <NodeIcon size={18} />
-                          })()}
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-extrabold text-toss-muted">
-                            {activeNode.step} · {activeNode.title}
-                          </p>
-                          <h3 className="mt-1 text-[15px] font-extrabold">{activeNode.plain}</h3>
-                          <p className="mt-2 text-[13px] font-medium leading-5 text-toss-text">{activeNode.detail}</p>
-                          <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50/70 p-3">
-                            <p className="text-[10px] font-extrabold text-blue-700">예시</p>
-                            <p className="mt-1 text-[12px] font-semibold leading-5 text-toss-text">{activeNode.example}</p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/80 p-3">
-                        <CircleHelp size={16} className="mt-0.5 shrink-0 text-amber-600" />
-                        <p className="text-[12px] font-medium leading-5 text-amber-900">
-                          이 맵은 공개 자료 기반 <strong>이해 모델</strong>입니다. 내부 스키마·호출 순서는 CONFIRM 문서로 남겨 두고 담당자 확인이 필요합니다.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <aside className="h-fit rounded-2xl border border-toss-line bg-white p-4 shadow-card lg:sticky lg:top-20">
-                    <div className="mb-3 flex items-center gap-2">
-                      <Layers3 size={16} className="text-toss-blue" />
-                      <h3 className="text-[14px] font-extrabold">이 노드의 문서</h3>
-                    </div>
-                    <div className="space-y-2">
-                      {project.docs
-                        .filter((d) => d.nodeId === activeNode.id)
-                        .map((doc) => (
-                          <button
-                            key={doc.id}
-                            onClick={() => openDocInEditor(doc.id)}
-                            className="w-full rounded-xl border border-toss-line p-3 text-left hover:border-blue-200 hover:bg-blue-50/40"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <EvidenceBadge value={doc.evidence} />
-                              <StatusBadge status={doc.status} />
-                            </div>
-                            <p className="mt-2 text-[13px] font-extrabold">{doc.title}</p>
-                            <p className="mt-1 text-[11px] font-medium text-toss-muted">{doc.kind}</p>
-                          </button>
-                        ))}
-                    </div>
-                    <button
-                      onClick={() => {
-                        setStatusFilter('all')
-                        setAudience('모두')
-                        setTab('docs')
-                      }}
-                      className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl bg-toss-surface py-2.5 text-[12px] font-bold hover:bg-blue-50 hover:text-toss-blue"
-                    >
-                      전체 문서 큐 보기 <ArrowRight size={14} />
-                    </button>
-                  </aside>
-                </div>
+              {tab === 'map' && (
+                <LogicMapWorkspace
+                  key={project.id}
+                  project={project}
+                  onOpenDoc={openDocInEditor}
+                  onOpenDocsTab={() => {
+                    setStatusFilter('all')
+                    setAudience('모두')
+                    setTab('docs')
+                  }}
+                />
               )}
 
               {tab === 'docs' && (

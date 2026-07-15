@@ -24,6 +24,68 @@ describe('nergy.ai workspace app', () => {
     expect(screen.getByText('채널별 이벤트 계약서')).toBeInTheDocument()
   })
 
+  it('shows Product Flow / Writing Roadmap mode switch on the map tab', async () => {
+    render(<App />)
+
+    expect(screen.getByRole('tab', { name: /Product Flow/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: /Writing Roadmap/i }))
+    // AnimatePresence 전환(exit 애니메이션)이 끝날 때까지 타이머를 진행
+    await act(async () => {
+      vi.advanceTimersByTime(2000)
+      await Promise.resolve()
+    })
+    expect(screen.getByText('전체 진행률')).toBeInTheDocument()
+    expect(screen.getByLabelText(/Draft 단계/)).toHaveTextContent('Actionbook 작성 가이드')
+  })
+
+  it('restores a legacy localStorage project (without edges) without crashing', () => {
+    localStorage.setItem(
+      'nergy.ai.workspace.v1',
+      JSON.stringify({
+        projects: [
+          {
+            id: 'proj-old',
+            name: 'OldSaved.app',
+            url: 'https://old.example.com',
+            description: '구버전 저장 프로젝트',
+            status: 'ready',
+            analyzedAt: '2026-07-01T00:00:00.000Z',
+            sourceCount: 1,
+            nodes: [
+              { id: 'x', step: '01', title: '수집', plain: '데이터 수집', detail: '', example: '', color: '#3182F6' },
+              { id: 'y', step: '02', title: '가공', plain: '데이터 가공', detail: '', example: '', color: '#8B5CF6' },
+            ],
+            docs: [
+              {
+                id: 'old-doc',
+                title: '남아있는 문서',
+                kind: 'Concept guide',
+                audience: '모두',
+                reason: '',
+                outline: [],
+                evidence: 'DOCS',
+                nodeId: 'x',
+                status: 'review',
+                notes: '',
+                assignee: '',
+                updatedAt: '2026-07-01T00:00:00.000Z',
+              },
+            ],
+            sources: [{ title: 'Home', url: 'https://old.example.com', date: '확인: 2026.07.01', note: '' }],
+          },
+        ],
+        activeProjectId: 'proj-old',
+      }),
+    )
+
+    render(<App />)
+
+    expect(screen.getAllByText('OldSaved.app').length).toBeGreaterThan(0)
+    expect(screen.getByText('제품 로직 맵')).toBeInTheDocument()
+    // 마이그레이션으로 생성된 기본 edge의 label이 그래프에 나타난다
+    expect(screen.getByText('수집 → 가공')).toBeInTheDocument()
+  })
+
   it('opens a document in the editor and updates status', () => {
     render(<App />)
 

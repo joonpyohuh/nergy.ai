@@ -48,6 +48,33 @@ button { -webkit-tap-highlight-color: transparent; }
 .progress-bar { animation: loadbar 2.4s ease-out both; }
 @keyframes loadbar { from { width: 4%; } to { width: 100%; } }
 
+/* 로직 맵 캔버스: 아주 약한 blue/violet ambient gradient */
+.ambient-canvas {
+  background:
+    radial-gradient(1100px 380px at 12% -8%, rgba(49, 130, 246, 0.055), transparent 62%),
+    radial-gradient(900px 340px at 92% 108%, rgba(139, 92, 246, 0.05), transparent 60%),
+    #ffffff;
+}
+
+/* 강조된 연결선의 방향성 흐름 애니메이션 */
+.rel-edge-dash {
+  stroke-dasharray: 5 7;
+  animation: edge-flow 0.9s linear infinite;
+}
+@keyframes edge-flow {
+  to { stroke-dashoffset: -12; }
+}
+
+/* React Flow 기본 스타일 위 미세 조정 */
+.react-flow__attribution {
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 6px;
+}
+.react-flow__node:focus-visible {
+  outline: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+  .rel-edge-dash { animation: none; }
 }
