@@ -1,6 +1,46 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { createDelightProject, toSerializableNodes } from './data'
+
+function delightPayload() {
+  const project = createDelightProject()
+  return {
+    ...project,
+    nodes: toSerializableNodes(project.nodes),
+  }
+}
+
+function jsonResponse(body: unknown, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => JSON.stringify(body),
+  }
+}
+
+function stubAuthenticatedWorkspace(extraHandlers?: (url: string, init?: RequestInit) => unknown | null) {
+  const delight = delightPayload()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const custom = extraHandlers?.(url, init)
+      if (custom) return custom
+
+      if (url.includes('/api/auth/me')) return jsonResponse({ authenticated: true })
+      if (url.includes('/api/auth/logout')) return jsonResponse({ ok: true })
+      if (url.includes('/api/workspace')) return jsonResponse({ ok: true })
+      if (url.match(/\/api\/projects\/[^/]+$/) && init?.method === 'PUT') return jsonResponse({ project: delight })
+      if (url.match(/\/api\/projects\/[^/]+$/) && init?.method === 'DELETE') return jsonResponse({ ok: true })
+      if (url.includes('/api/projects') && init?.method === 'POST') return jsonResponse({ project: delight })
+      if (url.includes('/api/projects')) {
+        return jsonResponse({ projects: [delight], activeProjectId: delight.id })
+      }
+      return jsonResponse({ error: `unhandled ${url}` }, 500)
+    }),
+  )
+}
 
 describe('nergy.ai workspace app', () => {
   beforeEach(() => {
@@ -15,21 +55,34 @@ describe('nergy.ai workspace app', () => {
     localStorage.clear()
   })
 
-  it('opens the seeded project workspace with map and docs', () => {
+  it('shows the shared-password login gate when unauthenticated', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ authenticated: false }, 401)),
+    )
+
     render(<App />)
 
+    expect(await screen.findByText('팀 공용 워크스페이스')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('팀 공용 비밀번호')).toBeInTheDocument()
+  })
+
+  it('opens the seeded project workspace with map and docs after auth', async () => {
+    stubAuthenticatedWorkspace()
+    render(<App />)
+
+    expect(await screen.findByText('제품 로직 맵')).toBeInTheDocument()
     expect(screen.getAllByText('Delight.ai').length).toBeGreaterThan(0)
-    expect(screen.getByText('제품 로직 맵')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /^문서 큐$/i }))
     expect(screen.getByText('채널별 이벤트 계약서')).toBeInTheDocument()
   })
 
   it('shows Product Flow / Writing Roadmap mode switch on the map tab', async () => {
+    stubAuthenticatedWorkspace()
     render(<App />)
 
-    expect(screen.getByRole('tab', { name: /Product Flow/i })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: /Product Flow/i })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: /Writing Roadmap/i }))
-    // AnimatePresence 전환(exit 애니메이션)이 끝날 때까지 타이머를 진행
     await act(async () => {
       vi.advanceTimersByTime(2000)
       await Promise.resolve()
@@ -38,57 +91,11 @@ describe('nergy.ai workspace app', () => {
     expect(screen.getByLabelText(/Draft 단계/)).toHaveTextContent('Actionbook 작성 가이드')
   })
 
-  it('restores a legacy localStorage project (without edges) without crashing', () => {
-    localStorage.setItem(
-      'nergy.ai.workspace.v1',
-      JSON.stringify({
-        projects: [
-          {
-            id: 'proj-old',
-            name: 'OldSaved.app',
-            url: 'https://old.example.com',
-            description: '구버전 저장 프로젝트',
-            status: 'ready',
-            analyzedAt: '2026-07-01T00:00:00.000Z',
-            sourceCount: 1,
-            nodes: [
-              { id: 'x', step: '01', title: '수집', plain: '데이터 수집', detail: '', example: '', color: '#3182F6' },
-              { id: 'y', step: '02', title: '가공', plain: '데이터 가공', detail: '', example: '', color: '#8B5CF6' },
-            ],
-            docs: [
-              {
-                id: 'old-doc',
-                title: '남아있는 문서',
-                kind: 'Concept guide',
-                audience: '모두',
-                reason: '',
-                outline: [],
-                evidence: 'DOCS',
-                nodeId: 'x',
-                status: 'review',
-                notes: '',
-                assignee: '',
-                updatedAt: '2026-07-01T00:00:00.000Z',
-              },
-            ],
-            sources: [{ title: 'Home', url: 'https://old.example.com', date: '확인: 2026.07.01', note: '' }],
-          },
-        ],
-        activeProjectId: 'proj-old',
-      }),
-    )
-
+  it('opens a document in the editor and updates status', async () => {
+    stubAuthenticatedWorkspace()
     render(<App />)
 
-    expect(screen.getAllByText('OldSaved.app').length).toBeGreaterThan(0)
-    expect(screen.getByText('제품 로직 맵')).toBeInTheDocument()
-    // 마이그레이션으로 생성된 기본 edge의 label이 그래프에 나타난다
-    expect(screen.getByText('수집 → 가공')).toBeInTheDocument()
-  })
-
-  it('opens a document in the editor and updates status', () => {
-    render(<App />)
-
+    expect(await screen.findByText('제품 로직 맵')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /^문서 큐$/i }))
     fireEvent.click(screen.getAllByRole('button', { name: /에디터에서 열기/i })[0])
 
@@ -132,16 +139,33 @@ describe('nergy.ai workspace app', () => {
         sources: [{ title: 'Home', url: 'https://acme.dev', date: '확인: 2026.07.14', note: '홈페이지' }],
       },
     }
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify(analyzePayload),
-      }),
-    )
+
+    stubAuthenticatedWorkspace((url, init) => {
+      if (url.includes('/api/analyze')) {
+        return jsonResponse(analyzePayload)
+      }
+      if (url.includes('/api/projects') && init?.method === 'POST') {
+        return jsonResponse({
+          project: {
+            id: 'proj-acme',
+            name: 'acme.dev',
+            url: 'https://acme.dev',
+            description: '테스트 제품',
+            status: 'ready',
+            analyzedAt: new Date().toISOString(),
+            sourceCount: 1,
+            nodes: analyzePayload.analysis.nodes,
+            edges: [],
+            docs: analyzePayload.analysis.docs,
+            sources: analyzePayload.analysis.sources,
+          },
+        })
+      }
+      return null
+    })
 
     render(<App />)
+    expect(await screen.findByText('제품 로직 맵')).toBeInTheDocument()
 
     fireEvent.click(screen.getAllByRole('button', { name: /새 제품 분석/i })[0])
     expect(screen.getByText('제품 URL로 분석 시작')).toBeInTheDocument()
@@ -151,6 +175,7 @@ describe('nergy.ai workspace app', () => {
     fireEvent.click(screen.getByRole('button', { name: /gpt-5.5로 분석 실행/i }))
 
     await act(async () => {
+      await Promise.resolve()
       await Promise.resolve()
       await Promise.resolve()
     })

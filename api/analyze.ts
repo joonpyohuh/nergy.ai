@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { requireSession } from './_lib/http'
 
 // OpenAI 호출이 25~50초 걸리므로 Edge(25초 응답 제한)가 아닌 Node 런타임을 사용한다.
 // maxDuration은 vercel.json의 functions 설정에서 60초로 지정.
@@ -83,6 +84,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Allow', 'POST')
     return res.status(405).json({ error: 'POST만 지원합니다.' })
   }
+
+  if (!requireSession(req, res)) return
 
   try {
     const apiKey = process.env.OPENAI_API_KEY

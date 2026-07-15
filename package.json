@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
+    "@supabase/supabase-js": "^2.110.5",
     "@vitejs/plugin-react": "latest",
     "@xyflow/react": "^12.11.2",
     "framer-motion": "^12.42.2",

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRight,
   Check,
@@ -12,7 +12,8 @@ import {
   Globe2,
   Link2,
   LoaderCircle,
-  Map,
+  LogOut,
+  Map as MapIcon,
   Menu,
   Plus,
   Search,
@@ -23,7 +24,6 @@ import {
 import {
   DOC_STATUS_LABEL,
   DOC_STATUS_ORDER,
-  createDelightProject,
   docsToMarkdown,
   type AnalysisPayload,
   type Audience,
@@ -32,46 +32,30 @@ import {
   type Project,
   type WorkspaceTab,
 } from './data'
-import { buildProjectFromAnalysis, migrateProject, serializeProject } from './lib/projectMigration'
+import { buildProjectFromAnalysis } from './lib/projectMigration'
+import {
+  createProject,
+  fetchAuthMe,
+  fetchProjects,
+  logout,
+  migrateLegacyLocalProjects,
+  removeProject,
+  saveActiveProjectId,
+  saveProject,
+} from './lib/api'
 import { EvidenceBadge, StatusBadge } from './components/badges'
+import { LoginGate } from './components/LoginGate'
 import { LogicMapWorkspace } from './components/logic-map/LogicMapWorkspace'
 
-const STORAGE_KEY = 'nergy.ai.workspace.v1'
-
 type View = 'projects' | 'workspace'
-
-interface PersistedState {
-  projects: Project[]
-  activeProjectId: string | null
-}
-
-function loadState(): PersistedState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as PersistedState
-      if (parsed.projects?.length) {
-        const projects = parsed.projects.map(migrateProject)
-        return {
-          projects,
-          activeProjectId: parsed.activeProjectId && projects.some((p) => p.id === parsed.activeProjectId)
-            ? parsed.activeProjectId
-            : projects[0].id,
-        }
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-  const seed = createDelightProject()
-  return { projects: [seed], activeProjectId: seed.id }
-}
+type AuthState = 'loading' | 'unauthenticated' | 'ready'
 
 function App() {
-  const [boot] = useState(loadState)
-  const [projects, setProjects] = useState<Project[]>(boot.projects)
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(boot.activeProjectId)
-  const [view, setView] = useState<View>(boot.activeProjectId ? 'workspace' : 'projects')
+  const [authState, setAuthState] = useState<AuthState>('loading')
+  const [bootError, setBootError] = useState('')
+  const [projects, setProjects] = useState<Project[]>([])
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
+  const [view, setView] = useState<View>('projects')
   const [tab, setTab] = useState<WorkspaceTab>('map')
   const [activeDocId, setActiveDocId] = useState<string | null>(null)
   const [audience, setAudience] = useState<Audience | '모두'>('모두')
@@ -83,6 +67,10 @@ function App() {
   const [analyzing, setAnalyzing] = useState(false)
   const [progress, setProgress] = useState(0)
   const [analyzeError, setAnalyzeError] = useState('')
+  const [toast, setToast] = useState('')
+  const [hydrated, setHydrated] = useState(false)
+  const saveTimers = useRef<Map<string, number>>(new Map())
+  const skipActivePersist = useRef(true)
 
   const normalizeAnalyzeUrl = (raw: string) => {
     let url = raw.trim()
@@ -94,18 +82,66 @@ function App() {
     }
     return url
   }
-  const [toast, setToast] = useState('')
+
+  const loadWorkspace = useCallback(async () => {
+    setBootError('')
+    await migrateLegacyLocalProjects()
+    const data = await fetchProjects()
+    setProjects(data.projects)
+    setActiveProjectId(data.activeProjectId)
+    setView(data.activeProjectId ? 'workspace' : 'projects')
+    const active = data.projects.find((p) => p.id === data.activeProjectId) ?? data.projects[0]
+    const firstWorking = active?.docs.find((d) => d.status === 'drafting' || d.status === 'planned')
+    setActiveDocId(firstWorking?.id ?? active?.docs[0]?.id ?? null)
+    skipActivePersist.current = true
+    setHydrated(true)
+    setAuthState('ready')
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const ok = await fetchAuthMe()
+        if (cancelled) return
+        if (!ok) {
+          setAuthState('unauthenticated')
+          return
+        }
+        await loadWorkspace()
+      } catch (error) {
+        if (cancelled) return
+        setBootError(error instanceof Error ? error.message : '워크스페이스를 불러오지 못했습니다.')
+        setAuthState('unauthenticated')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [loadWorkspace])
 
   const project = projects.find((p) => p.id === activeProjectId) ?? null
   const activeDoc = project?.docs.find((d) => d.id === activeDocId) ?? null
 
+  const queueSaveProject = useCallback((next: Project) => {
+    const existing = saveTimers.current.get(next.id)
+    if (existing) window.clearTimeout(existing)
+    const timer = window.setTimeout(() => {
+      void saveProject(next).catch((error) => {
+        setToast(error instanceof Error ? error.message : '저장에 실패했습니다.')
+      })
+      saveTimers.current.delete(next.id)
+    }, 500)
+    saveTimers.current.set(next.id, timer)
+  }, [])
+
   useEffect(() => {
-    const payload = {
-      projects: projects.map(serializeProject),
-      activeProjectId,
+    if (!hydrated || skipActivePersist.current) {
+      skipActivePersist.current = false
+      return
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  }, [projects, activeProjectId])
+    void saveActiveProjectId(activeProjectId).catch(() => undefined)
+  }, [activeProjectId, hydrated])
 
   useEffect(() => {
     if (!toast) return
@@ -146,7 +182,12 @@ function App() {
   }
 
   const updateProject = (id: string, updater: (p: Project) => Project) => {
-    setProjects((prev) => prev.map((p) => (p.id === id ? updater(p) : p)))
+    setProjects((prev) => {
+      const next = prev.map((p) => (p.id === id ? updater(p) : p))
+      const changed = next.find((p) => p.id === id)
+      if (changed) queueSaveProject(changed)
+      return next
+    })
   }
 
   const updateDoc = (docId: string, patch: Partial<DocSuggestion>) => {
@@ -182,6 +223,7 @@ function App() {
     try {
       const response = await fetch('/api/analyze', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       })
@@ -208,6 +250,7 @@ function App() {
 
       setProgress(100)
       const newProject = buildProjectFromAnalysis(url, payload.analysis, payload.model || 'gpt-5.5')
+      await createProject(newProject)
       setProjects((prev) => [newProject, ...prev])
       setActiveProjectId(newProject.id)
       setActiveDocId(newProject.docs[0]?.id ?? null)
@@ -239,15 +282,65 @@ function App() {
   }
 
   const deleteProject = (id: string) => {
-    setProjects((prev) => {
-      const next = prev.filter((p) => p.id !== id)
-      if (activeProjectId === id) {
-        setActiveProjectId(next[0]?.id ?? null)
-        setView(next[0] ? 'workspace' : 'projects')
-      }
-      return next
-    })
-    setToast('프로젝트를 삭제했어요')
+    void removeProject(id)
+      .then(() => {
+        setProjects((prev) => {
+          const next = prev.filter((p) => p.id !== id)
+          if (activeProjectId === id) {
+            setActiveProjectId(next[0]?.id ?? null)
+            setView(next[0] ? 'workspace' : 'projects')
+          }
+          return next
+        })
+        setToast('프로젝트를 삭제했어요')
+      })
+      .catch((error) => {
+        setToast(error instanceof Error ? error.message : '삭제에 실패했습니다.')
+      })
+  }
+
+  const handleLogout = async () => {
+    await logout()
+    setAuthState('unauthenticated')
+    setProjects([])
+    setActiveProjectId(null)
+    setHydrated(false)
+  }
+
+  if (authState === 'loading') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F4F6F8] text-toss-dark">
+        <p className="flex items-center gap-2 text-[14px] font-bold text-toss-muted">
+          <LoaderCircle size={16} className="animate-spin text-toss-blue" /> 워크스페이스 확인 중
+        </p>
+      </div>
+    )
+  }
+
+  if (authState === 'unauthenticated') {
+    return (
+      <LoginGate
+        onSuccess={() => {
+          void loadWorkspace().catch((error) => {
+            setBootError(error instanceof Error ? error.message : '워크스페이스를 불러오지 못했습니다.')
+          })
+        }}
+      />
+    )
+  }
+
+  if (bootError && projects.length === 0) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#F4F6F8] px-4 text-toss-dark">
+        <p className="max-w-md text-center text-[14px] font-semibold text-red-700">{bootError}</p>
+        <button
+          onClick={() => void handleLogout()}
+          className="rounded-xl bg-toss-blue px-4 py-2.5 text-[13px] font-bold text-white"
+        >
+          다시 로그인
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -317,8 +410,14 @@ function App() {
           </div>
         </nav>
 
-        <div className="border-t border-toss-line p-3 text-[11px] font-medium text-toss-muted">
-          AI는 시작점을 잡고, Writer가 판단합니다.
+        <div className="border-t border-toss-line p-3">
+          <button
+            onClick={() => void handleLogout()}
+            className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-toss-line px-3 py-2 text-[12px] font-bold text-toss-muted hover:bg-toss-surface hover:text-toss-dark"
+          >
+            <LogOut size={14} /> 로그아웃
+          </button>
+          <p className="text-[11px] font-medium text-toss-muted">AI는 시작점을 잡고, Writer가 판단합니다.</p>
         </div>
       </aside>
 
@@ -444,7 +543,7 @@ function App() {
               <div className="flex gap-1 overflow-x-auto">
                 {(
                   [
-                    ['map', '로직 맵', Map],
+                    ['map', '로직 맵', MapIcon],
                     ['docs', '문서 큐', ClipboardList],
                     ['editor', '에디터', FileText],
                     ['sources', '근거', Link2],
