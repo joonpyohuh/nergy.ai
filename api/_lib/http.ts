@@ -3,7 +3,7 @@ import {
   SESSION_COOKIE,
   parseCookieHeader,
   verifySessionToken,
-} from './session'
+} from './session.js'
 
 export function readSessionToken(req: VercelRequest): string | null {
   const fromCookies = req.cookies?.[SESSION_COOKIE]

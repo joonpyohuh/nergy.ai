@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { errorMessage, requireSession, statusFromError } from '../_lib/http'
-import { deleteProject, upsertProject } from '../_lib/projectStore'
+import { errorMessage, requireSession, statusFromError } from '../_lib/http.js'
+import { deleteProject, upsertProject } from '../_lib/projectStore.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8')

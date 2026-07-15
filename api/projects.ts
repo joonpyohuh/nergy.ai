@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { errorMessage, requireSession, statusFromError } from './_lib/http'
-import { ensureSeedProject, upsertProject } from './_lib/projectStore'
-import { DELIGHT_SEED } from './_lib/delightSeed'
+import { errorMessage, requireSession, statusFromError } from './_lib/http.js'
+import { ensureSeedProject, upsertProject } from './_lib/projectStore.js'
+import { DELIGHT_SEED } from './_lib/delightSeed.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8')

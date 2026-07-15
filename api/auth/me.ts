@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { readSessionToken } from '../_lib/http'
-import { verifySessionToken } from '../_lib/session'
-import { errorMessage, statusFromError } from '../_lib/http'
+import { readSessionToken } from '../_lib/http.js'
+import { verifySessionToken } from '../_lib/session.js'
+import { errorMessage, statusFromError } from '../_lib/http.js'
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8')

@@ -1,11 +1,11 @@
-import { getSupabaseAdmin } from './supabase'
+import { getSupabaseAdmin } from './supabase.js'
 import {
   asStoredProject,
   projectToRow,
   rowToStoredProject,
   type ProjectRow,
   type StoredProject,
-} from './projectTypes'
+} from './projectTypes.js'
 
 export type { StoredProject }
 
@@ -20,10 +20,12 @@ export async function listProjects(): Promise<{ projects: StoredProject[]; activ
   if (metaError) throw Object.assign(new Error(metaError.message), { status: 500 })
 
   const projects = (rows as ProjectRow[] | null)?.map(rowToStoredProject) ?? []
+  const activeFromMeta =
+    meta && typeof meta === 'object' && 'active_project_id' in meta
+      ? (meta as { active_project_id: string | null }).active_project_id
+      : null
   const activeProjectId =
-    meta?.active_project_id && projects.some((p) => p.id === meta.active_project_id)
-      ? meta.active_project_id
-      : projects[0]?.id ?? null
+    activeFromMeta && projects.some((p) => p.id === activeFromMeta) ? activeFromMeta : projects[0]?.id ?? null
 
   return { projects, activeProjectId }
 }
